@@ -1,222 +1,199 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#0f0f0f">
-<title>Escáner Códigos</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0f0f0f">
+    <title>Escáner Códigos</title>
 
-<!-- TODO: TU CSS ORIGINAL SIN CAMBIOS -->
-<!-- (No lo repito aquí por espacio: es exactamente el mismo que enviaste) -->
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .start-screen {
+            position: fixed;
+            inset: 0;
+            background: #0a0a0a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .start-screen.hidden { display: none; }
+
+        .start-btn {
+            margin-top: 20px;
+            padding: 15px 25px;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: bold;
+            background: #00ff88;
+            color: #000;
+            cursor: pointer;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.55);
+        }
+
+        .scan-area {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 260px;
+            height: 260px;
+            transform: translate(-50%, -50%);
+            border: 2px solid rgba(255,255,255,0.4);
+            border-radius: 20px;
+            z-index: 2;
+        }
+
+        .header {
+            position: absolute;
+            top: 15px;
+            width: 100%;
+            text-align: center;
+            z-index: 3;
+        }
+
+        .header h1 {
+            font-size: 18px;
+        }
+
+        .status {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            z-index: 3;
+            font-size: 14px;
+            opacity: 0.8;
+        }
+    </style>
 </head>
 
 <body>
 <div id="container">
-    <!-- TU HTML ORIGINAL SIN CAMBIOS -->
+
+    <!-- Pantalla inicial -->
+    <div class="start-screen" id="startScreen">
+        <h2>Escáner de Códigos</h2>
+        <p>Escaneá códigos QR y de barras</p>
+        <button class="start-btn" onclick="startScanner()">Iniciar cámara</button>
+        <div id="errorMsg" style="color:#ff5555;margin-top:15px;"></div>
+    </div>
+
+    <!-- Cabecera -->
+    <div class="header">
+        <h1>Escaneando…</h1>
+    </div>
+
+    <!-- Video -->
+    <video id="video" autoplay playsinline muted></video>
+
+    <!-- Overlay -->
+    <div class="overlay"></div>
+    <div class="scan-area"></div>
+
+    <!-- Estado -->
+    <div class="status" id="statusText">Esperando cámara…</div>
 </div>
 
 <script>
-/* ===========================
-   CARGA ZXING
-=========================== */
+/* ================= ZXING ================= */
 const script = document.createElement('script');
 script.src = 'https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js';
 document.head.appendChild(script);
 
-/* ===========================
-   ESTADO GLOBAL
-=========================== */
 let codeReader = null;
-let currentStream = null;
-let isScanning = false;
+let stream = null;
+let scanning = false;
 let lastText = null;
-let isBackCamera = localStorage.getItem('camera') !== 'front';
-let scanHistory = JSON.parse(localStorage.getItem('scanHistory') || '[]');
 
-/* ===========================
-   INIT ZXING
-=========================== */
 script.onload = () => {
     codeReader = new ZXing.BrowserMultiFormatReader();
-    updateHistoryUI();
 };
 
-/* ===========================
-   CÁMARA
-=========================== */
-async function initCamera() {
-    if (currentStream) {
-        currentStream.getTracks().forEach(t => t.stop());
-        currentStream = null;
-    }
-
-    const constraints = {
-        video: {
-            facingMode: isBackCamera ? 'environment' : 'user',
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-        }
-    };
-
-    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-    const video = document.getElementById('video');
-    video.srcObject = currentStream;
-
-    await new Promise(res => video.onloadedmetadata = res);
-    await video.play();
-}
-
-/* ===========================
-   START SCANNER
-=========================== */
+/* ================= INICIAR ================= */
 async function startScanner() {
     try {
-        if (!navigator.mediaDevices?.getUserMedia) {
-            throw new Error('Cámara no soportada');
-        }
+        document.getElementById('errorMsg').textContent = '';
+        const constraints = {
+            video: { facingMode: 'environment' }
+        };
 
-        await initCamera();
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        const video = document.getElementById('video');
+        video.srcObject = stream;
+
+        await video.play();
+
         document.getElementById('startScreen').classList.add('hidden');
+        document.getElementById('statusText').textContent = 'Buscando código…';
+
         startDetection();
     } catch (e) {
-        showError(e.message);
+        document.getElementById('errorMsg').textContent =
+            'No se pudo acceder a la cámara';
     }
 }
 
-/* ===========================
-   DETECCIÓN
-=========================== */
+/* ================= DETECCIÓN ================= */
 function startDetection() {
-    if (!codeReader) return setTimeout(startDetection, 100);
+    if (!codeReader) return;
 
-    codeReader.reset();
-    isScanning = true;
+    scanning = true;
+    codeReader.decodeFromVideoElement(
+        document.getElementById('video'),
+        (result, err) => {
+            if (!scanning || !result) return;
 
-    const video = document.getElementById('video');
+            const text = result.getText();
+            if (text === lastText) return;
 
-    codeReader.decodeFromVideoElement(video, (result, err) => {
-        if (!isScanning || !result) return;
+            lastText = text;
+            scanning = false;
 
-        const text = result.getText();
-        if (text === lastText) return;
+            document.getElementById('statusText').textContent =
+                'Detectado: ' + text;
 
-        lastText = text;
-        handleScan(result);
-    });
-}
+            if (navigator.vibrate) navigator.vibrate(150);
 
-/* ===========================
-   SCAN
-=========================== */
-function handleScan(result) {
-    isScanning = false;
-    codeReader.reset();
-
-    if (navigator.vibrate) navigator.vibrate(150);
-
-    const text = result.getText();
-    const format = result.getBarcodeFormat();
-
-    showResult(text, format);
-    addToHistory(text, format);
-}
-
-/* ===========================
-   RESULTADO
-=========================== */
-function showResult(text, format) {
-    document.getElementById('resultContent').textContent = text;
-    document.getElementById('resultType').textContent = format || 'Código';
-    document.getElementById('resultPanel').classList.add('active');
-    document.getElementById('statusText').textContent = 'Detectado';
-}
-
-function closeResult() {
-    document.getElementById('resultPanel').classList.remove('active');
-    document.getElementById('statusText').textContent = 'Buscando...';
-    lastText = null;
-    startDetection();
-}
-
-/* ===========================
-   CÁMARA / FLASH
-=========================== */
-async function switchCamera() {
-    isBackCamera = !isBackCamera;
-    localStorage.setItem('camera', isBackCamera ? 'back' : 'front');
-    await initCamera();
-    startDetection();
-}
-
-async function toggleFlash() {
-    if (!currentStream) return;
-
-    const track = currentStream.getVideoTracks()[0];
-    const caps = track.getCapabilities?.();
-
-    if (!caps || !caps.torch) {
-        alert('Flash no disponible en este iPhone');
-        return;
-    }
-
-    const torch = !track.getSettings().torch;
-    await track.applyConstraints({ advanced: [{ torch }] });
-    document.getElementById('flashBtn').classList.toggle('active', torch);
-}
-
-/* ===========================
-   CLIPBOARD
-=========================== */
-function copyResult() {
-    const text = document.getElementById('resultContent').textContent;
-
-    if (!navigator.clipboard) {
-        alert('No se puede copiar automáticamente');
-        return;
-    }
-
-    navigator.clipboard.writeText(text);
-}
-
-/* ===========================
-   HISTORIAL
-=========================== */
-function addToHistory(text, format) {
-    const now = new Date();
-    scanHistory.unshift({
-        text,
-        format,
-        date: now.toLocaleDateString(),
-        time: now.toLocaleTimeString(),
-        datetime: now.toLocaleString()
-    });
-
-    if (scanHistory.length > 100) scanHistory.pop();
-    localStorage.setItem('scanHistory', JSON.stringify(scanHistory));
-    updateHistoryUI();
-}
-
-function updateHistoryUI() {
-    document.getElementById('historyCount').textContent = `(${scanHistory.length})`;
-}
-
-/* ===========================
-   VISIBILIDAD (iOS FIX)
-=========================== */
-document.addEventListener('visibilitychange', () => {
-    if (document.hidden && currentStream) {
-        currentStream.getTracks().forEach(t => t.stop());
-    }
-});
-
-/* ===========================
-   ERRORES
-=========================== */
-function showError(msg) {
-    const el = document.getElementById('errorMsg');
-    el.textContent = msg;
-    el.style.display = 'block';
+            setTimeout(() => {
+                lastText = null;
+                scanning = true;
+                document.getElementById('statusText').textContent =
+                    'Buscando código…';
+            }, 2500);
+        }
+    );
 }
 </script>
+
 </body>
 </html>
