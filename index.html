@@ -1,197 +1,204 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#0f0f0f">
-    <title>Escáner Códigos</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0f0f0f">
+<title>Escáner Código de Barras</title>
 
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0a0a0a;
-            color: #fff;
-            overflow: hidden;
-        }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0a0a;
+    color: #fff;
+    overflow: hidden;
+}
 
-        #container {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-        }
+#container {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+}
 
-        .start-screen {
-            position: fixed;
-            inset: 0;
-            background: #0a0a0a;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 10;
-            padding: 30px;
-            text-align: center;
-        }
+video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
 
-        .start-screen.hidden { display: none; }
+.start-screen {
+    position: fixed;
+    inset: 0;
+    background: #0a0a0a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    text-align: center;
+    padding: 30px;
+}
 
-        .start-btn {
-            margin-top: 20px;
-            padding: 15px 25px;
-            border: none;
-            border-radius: 12px;
-            font-size: 18px;
-            font-weight: bold;
-            background: #00ff88;
-            color: #000;
-            cursor: pointer;
-        }
+.start-btn {
+    margin-top: 20px;
+    padding: 16px 28px;
+    border-radius: 14px;
+    border: none;
+    font-size: 18px;
+    font-weight: 700;
+    background: #00ff88;
+    color: #000;
+}
 
-        video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
+.header {
+    position: absolute;
+    top: 20px;
+    width: 100%;
+    text-align: center;
+    font-size: 18px;
+    z-index: 3;
+}
 
-        .overlay {
-            position: absolute;
-            inset: 0;
-            background: rgba(0,0,0,0.55);
-        }
+.scan-area {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 320px;
+    height: 140px;
+    transform: translate(-50%, -50%);
+    border: 2px solid rgba(255,255,255,0.6);
+    border-radius: 14px;
+    z-index: 3;
+}
 
-        .scan-area {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 260px;
-            height: 260px;
-            transform: translate(-50%, -50%);
-            border: 2px solid rgba(255,255,255,0.4);
-            border-radius: 20px;
-            z-index: 2;
-        }
+.status {
+    position: absolute;
+    bottom: 30px;
+    width: 100%;
+    text-align: center;
+    font-size: 16px;
+    z-index: 3;
+}
 
-        .header {
-            position: absolute;
-            top: 15px;
-            width: 100%;
-            text-align: center;
-            z-index: 3;
-        }
-
-        .header h1 {
-            font-size: 18px;
-        }
-
-        .status {
-            position: absolute;
-            bottom: 20px;
-            width: 100%;
-            text-align: center;
-            z-index: 3;
-            font-size: 14px;
-            opacity: 0.8;
-        }
-    </style>
+.status.ok {
+    color: #00ff88;
+    font-weight: bold;
+}
+</style>
 </head>
 
 <body>
 <div id="container">
 
-    <!-- Pantalla inicial -->
     <div class="start-screen" id="startScreen">
-        <h2>Escáner de Códigos</h2>
-        <p>Escaneá códigos QR y de barras</p>
+        <h2>Escáner de Código de Barras</h2>
+        <p>Code 128 / EAN</p>
         <button class="start-btn" onclick="startScanner()">Iniciar cámara</button>
         <div id="errorMsg" style="color:#ff5555;margin-top:15px;"></div>
     </div>
 
-    <!-- Cabecera -->
-    <div class="header">
-        <h1>Escaneando…</h1>
-    </div>
+    <div class="header">Escaneando…</div>
 
-    <!-- Video -->
     <video id="video" autoplay playsinline muted></video>
 
-    <!-- Overlay -->
-    <div class="overlay"></div>
     <div class="scan-area"></div>
 
-    <!-- Estado -->
     <div class="status" id="statusText">Esperando cámara…</div>
 </div>
 
 <script>
-/* ================= ZXING ================= */
-const script = document.createElement('script');
-script.src = 'https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js';
-document.head.appendChild(script);
+/* ================== ZXING ================== */
+const zxingScript = document.createElement('script');
+zxingScript.src = 'https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js';
+document.head.appendChild(zxingScript);
 
-let codeReader = null;
+let reader = null;
 let stream = null;
 let scanning = false;
-let lastText = null;
+let lastCode = null;
+let audioCtx = null;
 
-script.onload = () => {
-    codeReader = new ZXing.BrowserMultiFormatReader();
+zxingScript.onload = () => {
+    const hints = new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+        ZXing.BarcodeFormat.CODE_128,
+        ZXing.BarcodeFormat.EAN_13,
+        ZXing.BarcodeFormat.EAN_8
+    ]);
+
+    reader = new ZXing.BrowserMultiFormatReader(hints, 500);
 };
 
-/* ================= INICIAR ================= */
+/* ================== AUDIO BEEP ================== */
+function beep() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc.type = 'square';
+    osc.frequency.value = 900;
+    gain.gain.value = 0.15;
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.15);
+}
+
+/* ================== START ================== */
 async function startScanner() {
     try {
-        document.getElementById('errorMsg').textContent = '';
         const constraints = {
-            video: { facingMode: 'environment' }
+            video: {
+                facingMode: 'environment',
+                focusMode: 'continuous'
+            }
         };
 
         stream = await navigator.mediaDevices.getUserMedia(constraints);
         const video = document.getElementById('video');
         video.srcObject = stream;
-
         await video.play();
 
-        document.getElementById('startScreen').classList.add('hidden');
+        document.getElementById('startScreen').style.display = 'none';
         document.getElementById('statusText').textContent = 'Buscando código…';
 
         startDetection();
-    } catch (e) {
-        document.getElementById('errorMsg').textContent =
-            'No se pudo acceder a la cámara';
+    } catch {
+        document.getElementById('errorMsg').textContent = 'No se pudo acceder a la cámara';
     }
 }
 
-/* ================= DETECCIÓN ================= */
+/* ================== DETECCIÓN ================== */
 function startDetection() {
-    if (!codeReader) return;
+    if (!reader) return;
 
     scanning = true;
-    codeReader.decodeFromVideoElement(
-        document.getElementById('video'),
-        (result, err) => {
-            if (!scanning || !result) return;
+    reader.decodeFromVideoElement(document.getElementById('video'), (result) => {
+        if (!scanning || !result) return;
 
-            const text = result.getText();
-            if (text === lastText) return;
+        const code = result.getText();
+        if (code === lastCode) return;
 
-            lastText = text;
-            scanning = false;
+        lastCode = code;
+        scanning = false;
 
-            document.getElementById('statusText').textContent =
-                'Detectado: ' + text;
+        document.getElementById('statusText').textContent = '✔ Código leído: ' + code;
+        document.getElementById('statusText').classList.add('ok');
 
-            if (navigator.vibrate) navigator.vibrate(150);
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        beep();
 
-            setTimeout(() => {
-                lastText = null;
-                scanning = true;
-                document.getElementById('statusText').textContent =
-                    'Buscando código…';
-            }, 2500);
-        }
-    );
+        setTimeout(() => {
+            document.getElementById('statusText').textContent = 'Buscando código…';
+            document.getElementById('statusText').classList.remove('ok');
+            lastCode = null;
+            scanning = true;
+        }, 2500);
+    });
 }
 </script>
 
