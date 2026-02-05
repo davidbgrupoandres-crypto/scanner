@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -13,10 +13,9 @@ body {
   background: #0a0a0a;
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-  overflow: hidden;
 }
 
-#container {
+#app {
   width: 100vw;
   height: 100vh;
   position: relative;
@@ -27,6 +26,41 @@ video {
   height: 100%;
   object-fit: cover;
 }
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+}
+
+.frame {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 360px;
+  height: 140px;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(255,255,255,0.8);
+  border-radius: 12px;
+}
+
+.header {
+  position: absolute;
+  top: 20px;
+  width: 100%;
+  text-align: center;
+  font-size: 18px;
+}
+
+.status {
+  position: absolute;
+  bottom: 30px;
+  width: 100%;
+  text-align: center;
+  font-size: 16px;
+}
+
+.status.ok { color: #00ff88; font-weight: bold; }
 
 .start {
   position: fixed;
@@ -41,7 +75,7 @@ video {
 
 .start button {
   margin-top: 20px;
-  padding: 16px 30px;
+  padding: 16px 28px;
   border-radius: 14px;
   border: none;
   font-size: 18px;
@@ -49,9 +83,99 @@ video {
   background: #00ff88;
   color: #000;
 }
+</style>
+</head>
 
-.frame {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 3
+<body>
+<div id="app">
+
+  <div class="start" id="start">
+    <h2>Escáner Code 128</h2>
+    <button onclick="startScanner()">Iniciar cámara</button>
+    <div id="err" style="color:#ff5555;margin-top:10px;"></div>
+  </div>
+
+  <div class="header">Escaneando…</div>
+  <video id="video" playsinline muted></video>
+  <div class="overlay"></div>
+  <div class="frame"></div>
+  <div class="status" id="status">Esperando cámara…</div>
+</div>
+
+<script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
+
+<script>
+let reader;
+let scanning = false;
+let lastCode = null;
+let audioCtx = null;
+
+function beep() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.frequency.value = 900;
+  g.gain.value = 0.15;
+  o.connect(g);
+  g.connect(audioCtx.destination);
+  o.start();
+  o.stop(audioCtx.currentTime + 0.15);
+}
+
+async function startScanner() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }
+    });
+
+    const video = document.getElementById('video');
+    video.srcObject = stream;
+    await video.play();
+
+    const hints = new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+      ZXing.BarcodeFormat.CODE_128,
+      ZXing.BarcodeFormat.EAN_13
+    ]);
+
+    reader = new ZXing.BrowserMultiFormatReader(hints, 300);
+    document.getElementById('start').style.display = 'none';
+    document.getElementById('status').textContent = 'Buscando código…';
+
+    scan(video);
+  } catch (e) {
+    document.getElementById('err').textContent = 'No se pudo acceder a la cámara';
+  }
+}
+
+function scan(video) {
+  if (scanning) return;
+  scanning = true;
+
+  reader.decodeFromVideoElement(video, (result) => {
+    if (!result) return;
+
+    const code = result.getText();
+    if (code === lastCode) return;
+
+    lastCode = code;
+    scanning = false;
+
+    const status = document.getElementById('status');
+    status.textContent = '✔ ' + code;
+    status.classList.add('ok');
+
+    if (navigator.vibrate) navigator.vibrate([200,100,200]);
+    beep();
+
+    setTimeout(() => {
+      status.textContent = 'Buscando código…';
+      status.classList.remove('ok');
+      lastCode = null;
+      scanning = false;
+    }, 2500);
+  });
+}
+</script>
+</body>
+</html>
