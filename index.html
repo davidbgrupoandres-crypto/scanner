@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0f0f0f">
+<title>Escáner Códigos</title>
+
+<!-- TODO: TU CSS ORIGINAL SIN CAMBIOS -->
+<!-- (No lo repito aquí por espacio: es exactamente el mismo que enviaste) -->
+</head>
+
+<body>
+<div id="container">
+    <!-- TU HTML ORIGINAL SIN CAMBIOS -->
+</div>
+
+<script>
+/* ===========================
+   CARGA ZXING
+=========================== */
+const script = document.createElement('script');
+script.src = 'https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js';
+document.head.appendChild(script);
+
+/* ===========================
+   ESTADO GLOBAL
+=========================== */
+let codeReader = null;
+let currentStream = null;
+let isScanning = false;
+let lastText = null;
+let isBackCamera = localStorage.getItem('camera') !== 'front';
+let scanHistory = JSON.parse(localStorage.getItem('scanHistory') || '[]');
+
+/* ===========================
+   INIT ZXING
+=========================== */
+script.onload = () => {
+    codeReader = new ZXing.BrowserMultiFormatReader();
+    updateHistoryUI();
+};
+
+/* ===========================
+   CÁMARA
+=========================== */
+async function initCamera() {
+    if (currentStream) {
+        currentStream.getTracks().forEach(t => t.stop());
+        currentStream = null;
+    }
+
+    const constraints = {
+        video: {
+            facingMode: isBackCamera ? 'environment' : 'user',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+        }
+    };
+
+    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+    const video = document.getElementById('video');
+    video.srcObject = currentStream;
+
+    await new Promise(res => video.onloadedmetadata = res);
+    await video.play();
+}
+
+/* ===========================
+   START SCANNER
+=========================== */
+async function startScanner() {
+    try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+            throw new Error('Cámara no soportada');
+        }
+
+        await initCamera();
+        document.getElementById('startScreen').classList.add('hidden');
+        startDetection();
+    } catch (e) {
+        showError(e.message);
+    }
+}
+
+/* ===========================
+   DETECCIÓN
+=========================== */
+function startDetection() {
+    if (!codeReader) return setTimeout(startDetection, 100);
+
+    codeReader.reset();
+    isScanning = true;
+
+    const video = document.getElementById('video');
+
+    codeReader.decodeFromVideoElement(video, (result, err) => {
+        if (!isScanning || !result) return;
+
+        const text = result.getText();
+        if (text === lastText) return;
+
+        lastText = text;
+        handleScan(result);
+    });
+}
+
+/* ===========================
+   SCAN
+=========================== */
+function handleScan(result) {
+    isScanning = false;
+    codeReader.reset();
+
+    if (navigator.vibrate) navigator.vibrate(150);
+
+    const text = result.getText();
+    const format = result.getBarcodeFormat();
+
+    showResult(text, format);
+    addToHistory(text, format);
+}
+
+/* ===========================
+   RESULTADO
+=========================== */
+function showResult(text, format) {
+    document.getElementById('resultContent').textContent = text;
+    document.getElementById('resultType').textContent = format || 'Código';
+    document.getElementById('resultPanel').classList.add('active');
+    document.getElementById('statusText').textContent = 'Detectado';
+}
+
+function closeResult() {
+    document.getElementById('resultPanel').classList.remove('active');
+    document.getElementById('statusText').textContent = 'Buscando...';
+    lastText = null;
+    startDetection();
+}
+
+/* ===========================
+   CÁMARA / FLASH
+=========================== */
+async function switchCamera() {
+    isBackCamera = !isBackCamera;
+    localStorage.setItem('camera', isBackCamera ? 'back' : 'front');
+    await initCamera();
+    startDetection();
+}
+
+async function toggleFlash() {
+    if (!currentStream) return;
+
+    const track = currentStream.getVideoTracks()[0];
+    const caps = track.getCapabilities?.();
+
+    if (!caps || !caps.torch) {
+        alert('Flash no disponible en este iPhone');
+        return;
+    }
+
+    const torch = !track.getSettings().torch;
+    await track.applyConstraints({ advanced: [{ torch }] });
+    document.getElementById('flashBtn').classList.toggle('active', torch);
+}
+
+/* ===========================
+   CLIPBOARD
+=========================== */
+function copyResult() {
+    const text = document.getElementById('resultContent').textContent;
+
+    if (!navigator.clipboard) {
+        alert('No se puede copiar automáticamente');
+        return;
+    }
+
+    navigator.clipboard.writeText(text);
+}
+
+/* ===========================
+   HISTORIAL
+=========================== */
+function addToHistory(text, format) {
+    const now = new Date();
+    scanHistory.unshift({
+        text,
+        format,
+        date: now.toLocaleDateString(),
+        time: now.toLocaleTimeString(),
+        datetime: now.toLocaleString()
+    });
+
+    if (scanHistory.length > 100) scanHistory.pop();
+    localStorage.setItem('scanHistory', JSON.stringify(scanHistory));
+    updateHistoryUI();
+}
+
+function updateHistoryUI() {
+    document.getElementById('historyCount').textContent = `(${scanHistory.length})`;
+}
+
+/* ===========================
+   VISIBILIDAD (iOS FIX)
+=========================== */
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden && currentStream) {
+        currentStream.getTracks().forEach(t => t.stop());
+    }
+});
+
+/* ===========================
+   ERRORES
+=========================== */
+function showError(msg) {
+    const el = document.getElementById('errorMsg');
+    el.textContent = msg;
+    el.style.display = 'block';
+}
+</script>
+</body>
+</html>
